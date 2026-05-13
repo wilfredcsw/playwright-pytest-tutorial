@@ -3,6 +3,7 @@ from utils.auth import login
 import re
 from utils.inbound_order import get_first_new_inbound_order_details
 from utils.sku import get_customer_barcode_value_from_sku_master
+from utils.charge_in_sku import scan_sku_barcode
 
 def test_receiving_operation(page: Page):
     login(page)
@@ -22,7 +23,6 @@ def test_receiving_operation(page: Page):
     )
 
     print(f"SKU Barcode Value: {barcode_value}")
-    page.pause()
 
     page.goto("http://52.74.129.113/inbound-operation/receiving")
 
@@ -73,6 +73,131 @@ def test_receiving_operation(page: Page):
     print(f"Called Bin No: {called_bin_no}")
     print("=============================\n")
 
+    # Scan barcode and charge in quantity
+    charge_in_quantity = "10"
 
+    scan_sku_barcode(
+        page,
+        barcode_value=barcode_value,
+        quantity=charge_in_quantity
+    )
 
+    # Wait until Total Charge In updates after scan confirmation
+    expect(
+        page.get_by_text(
+            f"Total Charge In:{charge_in_quantity}",
+            exact=True
+        )
+    ).to_be_visible(timeout=30000)
 
+    # Verify Total Expected and Total Charge In are tally
+    total_expected_locator = page.get_by_text(
+        re.compile(r"Total Expected:\s*\d+")
+    )
+
+    total_charge_in_locator = page.get_by_text(
+        re.compile(r"Total Charge In:\s*\d+")
+    )
+
+    expect(total_expected_locator).to_be_visible(timeout=10000)
+    expect(total_charge_in_locator).to_be_visible(timeout=10000)
+
+    total_expected_text = total_expected_locator.inner_text()
+    total_charge_in_text = total_charge_in_locator.inner_text()
+
+    total_expected = int(
+        re.search(r"Total Expected:\s*(\d+)", total_expected_text).group(1)
+    )
+
+    total_charge_in = int(
+        re.search(r"Total Charge In:\s*(\d+)", total_charge_in_text).group(1)
+    )
+
+    assert total_expected == total_charge_in, (
+        f"Total Expected and Total Charge In are not tally. "
+        f"Expected: {total_expected}, Charge In: {total_charge_in}"
+    )
+
+    print(
+        f"Total Expected and Total Charge In tally: "
+        f"{total_expected} = {total_charge_in}"
+    )
+
+    # Verify correct record(s) are added in Scanned Item(s) listing
+    scanned_item_rows = (
+        page.get_by_role("row")
+        .filter(has_text=inbound_details["lpn_code"])
+        .filter(has_text=inbound_details["sku_code"])
+        .filter(has_text=called_bin_no)
+    )
+
+    row_count = scanned_item_rows.count()
+
+    assert row_count > 0, (
+        "No scanned item record found. "
+        f"Expected LPN={inbound_details['lpn_code']}, "
+        f"SKU={inbound_details['sku_code']}, "
+        f"Storage={called_bin_no}"
+    )
+
+    print("\n===== SCANNED ITEM RECORD(S) FOUND =====")
+
+    scanned_items = []
+
+    for i in range(row_count):
+        row = scanned_item_rows.nth(i)
+
+        expect(row).to_be_visible(timeout=10000)
+
+        cells = row.get_by_role("gridcell")
+
+        scanned_lpn_code = cells.nth(0).inner_text().strip()
+        scanned_sku_cell_text = cells.nth(1).inner_text().strip()
+        scanned_sku_code = scanned_sku_cell_text.splitlines()[0].strip()
+        scanned_qty = cells.nth(2).inner_text().strip()
+        scanned_sku_uom = cells.nth(3).inner_text().strip()
+        scanned_batch_no = cells.nth(4).inner_text().strip()
+        scanned_expiry_date = cells.nth(5).inner_text().strip()
+        scanned_manufacturer_date = cells.nth(6).inner_text().strip()
+        scanned_storage_no = cells.nth(7).inner_text().strip()
+
+        scanned_item = {
+            "lpn_code": scanned_lpn_code,
+            "sku_code": scanned_sku_code,
+            "qty": scanned_qty,
+            "sku_uom": scanned_sku_uom,
+            "batch_no": scanned_batch_no,
+            "expiry_date": scanned_expiry_date,
+            "manufacturer_date": scanned_manufacturer_date,
+            "storage_no": scanned_storage_no,
+        }
+
+        scanned_items.append(scanned_item)
+
+        print(f"\nRecord {i + 1}:")
+        print(f"LPN Code: {scanned_lpn_code}")
+        print(f"SKU Code: {scanned_sku_code}")
+        print(f"Qty: {scanned_qty}")
+        print(f"SKU UOM: {scanned_sku_uom}")
+        print(f"Batch No.: {scanned_batch_no}")
+        print(f"Expiry Date: {scanned_expiry_date}")
+        print(f"Manufacturer Date: {scanned_manufacturer_date}")
+        print(f"Storage No.: {scanned_storage_no}")
+
+        assert scanned_lpn_code == inbound_details["lpn_code"], (
+            f"Scanned item LPN mismatch in record {i + 1}. "
+            f"Expected: {inbound_details['lpn_code']}, Actual: {scanned_lpn_code}"
+        )
+
+        assert inbound_details["sku_code"] == scanned_sku_code, (
+            f"Scanned item SKU mismatch in record {i + 1}. "
+            f"Expected SKU: {inbound_details['sku_code']}, Actual SKU Code: {scanned_sku_code}"
+        )
+
+        assert scanned_storage_no == called_bin_no, (
+            f"Scanned item storage/bin mismatch in record {i + 1}. "
+            f"Expected: {called_bin_no}, Actual: {scanned_storage_no}"
+        )
+
+    print("\n===== END SCANNED ITEM RECORD(S) =====")
+    page.pause()
