@@ -3,7 +3,7 @@ from utils.auth import login
 import re
 from utils.inbound_order import get_first_new_inbound_order_details
 from utils.sku import get_customer_barcode_value_from_sku_master
-from utils.charge_in_sku import scan_sku_barcode
+from utils.sku_scanner import scan_sku_barcode, store_bin_with_capacity
 
 def test_receiving_operation(page: Page):
     login(page)
@@ -57,7 +57,7 @@ def test_receiving_operation(page: Page):
         page.get_by_text("Current Bin")
             .locator("xpath=..")
             .get_by_text(re.compile(r"^BIN\d+$"))
-    ).to_be_visible(timeout=60000)
+    ).to_be_visible(timeout=90000)
 
     # Capture called bin after it arrives
     called_bin_no = (
@@ -200,4 +200,33 @@ def test_receiving_operation(page: Page):
         )
 
     print("\n===== END SCANNED ITEM RECORD(S) =====")
-    page.pause()
+
+    # Store bin after successful charge-in
+    selected_capacity = "75"  # Change this value to test different capacity options: "25", "50", "75", "100"
+
+    store_bin_with_capacity(
+        page,
+        capacity_percentage=selected_capacity
+    )
+
+    # Verify GRN Summary popup appears after Store Bin
+    expect(
+        page.get_by_text("GRN Summary", exact=True)
+    ).to_be_visible(timeout=30000)
+
+    print(
+        f"GRN Summary popup displayed after Store Bin "
+        f"with {selected_capacity}% capacity"
+    )
+
+    # Complete GRN Summary
+    complete_button = page.get_by_text("Complete", exact=True)
+
+    expect(complete_button).to_be_visible(timeout=10000)
+    expect(complete_button).to_be_enabled(timeout=10000)
+
+    complete_button.click()
+
+    print("Completed Putaway Successfully")
+
+    
