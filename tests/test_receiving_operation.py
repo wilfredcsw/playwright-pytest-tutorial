@@ -1,9 +1,28 @@
 from playwright.sync_api import Page, expect
 from utils.auth import login
 import re
+from utils.inbound_order import get_first_new_inbound_order_details
+from utils.sku import get_customer_barcode_value_from_sku_master
 
 def test_receiving_operation(page: Page):
     login(page)
+    inbound_details = get_first_new_inbound_order_details(page)
+
+    print("\n===== INBOUND DETAILS =====")
+    print(f"Inbound Document No: {inbound_details['inbound_document_no']}")
+    print(f"Company Name: {inbound_details['company_name']}")
+    print(f"LPN Code: {inbound_details['lpn_code']}")
+    print(f"SKU Code: {inbound_details['sku_code']}")
+    print("===========================\n")
+
+    barcode_value = get_customer_barcode_value_from_sku_master(
+        page,
+        company_name=inbound_details["company_name"],
+        sku_code=inbound_details["sku_code"]
+    )
+
+    print(f"SKU Barcode Value: {barcode_value}")
+    page.pause()
 
     page.goto("http://52.74.129.113/inbound-operation/receiving")
 
@@ -11,7 +30,7 @@ def test_receiving_operation(page: Page):
         page.get_by_label("breadcrumb").get_by_text("Receiving", exact=True)
     ).to_be_visible()
 
-    lpn_code = "TOTE_ASN2605110306_01"
+    lpn_code = inbound_details['lpn_code']
 
     page.get_by_label("LPN Code").fill(lpn_code)
 
@@ -53,5 +72,7 @@ def test_receiving_operation(page: Page):
     print(f"Inbound Document No: {inbound_document_no}")
     print(f"Called Bin No: {called_bin_no}")
     print("=============================\n")
+
+
 
 
