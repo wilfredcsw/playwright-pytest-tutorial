@@ -202,31 +202,77 @@ def test_receiving_operation(page: Page):
     print("\n===== END SCANNED ITEM RECORD(S) =====")
 
     # Store bin after successful charge-in
-    selected_capacity = "75"  # Change this value to test different capacity options: "25", "50", "75", "100"
+    selected_capacity = "50"  # Change this value to test different capacity options: "25", "50", "75", "100"
 
     store_bin_with_capacity(
         page,
         capacity_percentage=selected_capacity
     )
 
-    # Verify GRN Summary popup appears after Store Bin
-    expect(
-        page.get_by_text("GRN Summary", exact=True)
-    ).to_be_visible(timeout=30000)
+    # Wait until GRN Summary popup appears
+    summary_title = page.get_by_text("GRN Summary", exact=True)
 
-    print(
-        f"GRN Summary popup displayed after Store Bin "
-        f"with {selected_capacity}% capacity"
+    expect(summary_title).to_be_visible(timeout=30000)
+
+    # Scope to GRN Summary popup
+    summary_popup = summary_title.locator(
+        "xpath=ancestor::*[.//*[normalize-space()='Complete']][1]"
     )
 
-    # Complete GRN Summary
-    complete_button = page.get_by_text("Complete", exact=True)
+    expect(summary_popup).to_be_visible(timeout=10000)
+
+    # Verify GRN Summary scanned item is tally
+    expect(
+        summary_popup.get_by_text("Scanned Items (Current Workstation)", exact=True)
+    ).to_be_visible(timeout=10000)
+
+    # SKU appears twice in the cell: SKU code + description.
+    # We only need to confirm the expected SKU exists in the scanned item section.
+    expect(
+        summary_popup.get_by_text(inbound_details["sku_code"], exact=True).first
+    ).to_be_visible(timeout=10000)
+
+    # Verify received quantity is shown in the summary table
+    expect(
+        summary_popup.get_by_text(charge_in_quantity, exact=True).last
+    ).to_be_visible(timeout=10000)
+
+    summary_text = summary_popup.inner_text()
+
+    assert inbound_details["sku_code"] in summary_text, (
+        f"GRN Summary SKU not found. "
+        f"Expected SKU: {inbound_details['sku_code']}"
+    )
+
+    assert charge_in_quantity in summary_text, (
+        f"GRN Summary received qty not found. "
+        f"Expected Received Qty: {charge_in_quantity}"
+    )
+
+    print("\n===== GRN SUMMARY SCANNED ITEM VERIFIED =====")
+    print(f"SKU Code: {inbound_details['sku_code']}")
+    print(f"Received Qty: {charge_in_quantity}")
+    print("============================================\n")
+
+    # Click Complete inside GRN Summary popup
+    complete_button = summary_popup.get_by_text("Complete", exact=True)
 
     expect(complete_button).to_be_visible(timeout=10000)
-    expect(complete_button).to_be_enabled(timeout=10000)
 
-    complete_button.click()
+    complete_button.scroll_into_view_if_needed()
+    complete_button.click(timeout=10000, force=True)
 
+    # Verify Complete action actually worked by checking redirect back to Receiving page
+    expect(page).to_have_url(
+        re.compile(r".*/inbound-operation/receiving/?$"),
+        timeout=30000
+    )
+
+    expect(
+        page.get_by_label("breadcrumb").get_by_text("Receiving", exact=True)
+    ).to_be_visible(timeout=10000)
+    
+    print("Clicked Complete on GRN Summary popup")
     print("Completed Putaway Successfully")
 
     
